@@ -17,11 +17,13 @@ app = marimo.App()
 
 @app.cell
 def _(mo):
-    mo.md(r"""
-    ---
-    ## AF1204 Individual Portfolio  |  Mohammed Al Tammar
-    College Diploma  |  City St George's, University of London
-    """)
+    mo.md(
+        r"""
+        ---
+        ## 🎓 Personal Portfolio Webpage
+        This webpage presents my profile, experience, and a simple interactive finance dashboard built with marimo.
+        """
+    )
     return
 
 
@@ -35,44 +37,72 @@ def _():
 
 @app.cell
 def _(pd):
-    data_url = (
+    # Load dataset from a raw gist URL, following the Week 4 lecture style
+    csv_url = (
         "https://gist.githubusercontent.com/DrAYim/"
         "80393243abdbb4bfe3b45fef58e8d3c8/raw/"
         "ed5cfd9f210bf80cb59a5f420bf8f2b88a9c2dcd/"
         "sp500_ZScore_AvgCostofDebt.csv"
     )
 
-    df = pd.read_csv(data_url)
-    df = df.dropna(subset=["AvgCost_of_Debt", "Z_Score_lag", "Sector_Key", "Market_Cap", "Name", "Ticker"])
-    df = df[df["AvgCost_of_Debt"] < 5].copy()
-    df["Debt_Cost_Percent"] = df["AvgCost_of_Debt"] * 100
-    df["Market_Cap_B"] = df["Market_Cap"] / 1e9
+    df_final = pd.read_csv(csv_url)
 
-    sector_table = (
-        df.groupby("Sector_Key")
-        .agg(
-            Avg_Debt_Cost=("Debt_Cost_Percent", "mean"),
-            Avg_Z_Score=("Z_Score_lag", "mean"),
-            Companies=("Name", "nunique")
-        )
-        .round(2)
-        .reset_index()
-        .rename(columns={"Sector_Key": "Sector"})
-        .sort_values("Avg_Debt_Cost", ascending=False)
+    # Basic cleaning
+    df_final = df_final.dropna(
+        subset=["AvgCost_of_Debt", "Z_Score_lag", "Sector_Key", "Market_Cap", "Name", "Ticker"]
     )
 
-    company_table = (
-        df.groupby(["Ticker", "Name", "Sector_Key"], as_index=False)
-        .agg(
-            Avg_Debt_Cost=("Debt_Cost_Percent", "mean"),
-            Avg_Z_Score=("Z_Score_lag", "mean"),
-            Avg_Market_Cap_B=("Market_Cap_B", "mean")
-        )
-        .round(2)
-        .sort_values("Avg_Market_Cap_B", ascending=False)
+    # Filter extreme outliers
+    df_final = df_final[df_final["AvgCost_of_Debt"] < 5]
+
+    # Create useful columns
+    df_final = df_final.copy()
+    df_final["Debt_Cost_Percent"] = df_final["AvgCost_of_Debt"] * 100
+    df_final["Market_Cap_B"] = df_final["Market_Cap"] / 1e9
+
+    return (df_final,)
+
+
+@app.cell
+def _(df_final, mo):
+    # UI controls
+    all_sectors = sorted(df_final["Sector_Key"].unique().tolist())
+
+    sector_dropdown = mo.ui.multiselect(
+        options=all_sectors,
+        value=all_sectors[:3],
+        label="Filter by Sector",
     )
 
-    return company_table, df, sector_table
+    max_cap = int(df_final["Market_Cap_B"].max())
+
+    cap_slider = mo.ui.slider(
+        start=0,
+        stop=max(50, min(max_cap, 300)),
+        step=10,
+        value=0,
+        label="Minimum Market Cap ($ Billions)",
+    )
+
+    return cap_slider, sector_dropdown
+
+
+@app.cell
+def _(cap_slider, df_final, sector_dropdown):
+    # Reactive filtering
+    filtered_portfolio = df_final[
+        (df_final["Sector_Key"].isin(sector_dropdown.value))
+        & (df_final["Market_Cap_B"] >= cap_slider.value)
+    ].copy()
+
+    company_count = filtered_portfolio["Name"].nunique()
+    avg_cost = (
+        filtered_portfolio["Debt_Cost_Percent"].mean()
+        if not filtered_portfolio.empty
+        else 0
+    )
+
+    return avg_cost, company_count, filtered_portfolio
 
 
 @app.cell
@@ -83,179 +113,182 @@ async def _(micropip):
 
 
 @app.cell
-def _(company_table, df, mo, sector_table):
-    sector_options = sorted(df["Sector_Key"].unique().tolist())
-    sector_select = mo.ui.multiselect(
-        options=sector_options,
-        value=sector_options[:4],
-        label="Select sectors"
-    )
-
-    max_cap = int(df["Market_Cap_B"].max())
-    cap_slider = mo.ui.slider(
-        start=0,
-        stop=max_cap if max_cap > 0 else 200,
-        step=10,
-        value=20,
-        label="Minimum market cap ($ billions)"
-    )
-
-    company_options = company_table["Ticker"].drop_duplicates().tolist()
-    company_select = mo.ui.dropdown(
-        options=company_options,
-        value=company_options[0],
-        label="Choose a company"
-    )
-
-    return cap_slider, company_select, sector_options, sector_select
-
-
-@app.cell
-def _(cap_slider, company_select, company_table, df, sector_select, sector_table):
-    filtered_df = df[
-        (df["Sector_Key"].isin(sector_select.value)) &
-        (df["Market_Cap_B"] >= cap_slider.value)
-    ].copy()
-
-    filtered_sector = sector_table[sector_table["Sector"].isin(sector_select.value)].copy()
-    selected_company = company_table[company_table["Ticker"] == company_select.value].copy()
-
-    obs_count = len(filtered_df)
-    company_count = filtered_df["Name"].nunique()
-    avg_cost = round(filtered_df["Debt_Cost_Percent"].mean(), 2) if obs_count else 0
-
-    return avg_cost, company_count, filtered_df, filtered_sector, obs_count, selected_company
-
-
-@app.cell
-def _(filtered_df, filtered_sector, obs_count, px, selected_company):
-    scatter_fig = px.scatter(
-        filtered_df,
+def _(filtered_portfolio, mo, pd, px):
+    # Main scatter plot
+    fig_portfolio = px.scatter(
+        filtered_portfolio,
         x="Z_Score_lag",
         y="Debt_Cost_Percent",
         color="Sector_Key",
         size="Market_Cap_B",
         hover_name="Name",
         hover_data=["Ticker"],
-        title=f"Credit Risk and Borrowing Cost ({obs_count} observations)",
+        title="Cost of Debt vs. Lagged Z-Score",
         labels={
             "Z_Score_lag": "Altman Z-Score (lagged)",
             "Debt_Cost_Percent": "Average Cost of Debt (%)",
-            "Sector_Key": "Sector"
+            "Sector_Key": "Sector",
         },
         template="presentation",
         width=900,
-        height=560
-    )
-    scatter_fig.add_vline(x=1.81, line_dash="dash", line_color="red")
-    scatter_fig.add_vline(x=2.99, line_dash="dash", line_color="green")
-
-    bar_fig = px.bar(
-        filtered_sector,
-        x="Sector",
-        y="Avg_Debt_Cost",
-        title="Average Cost of Debt by Sector",
-        labels={"Avg_Debt_Cost": "Average Cost of Debt (%)"},
-        template="presentation"
+        height=600,
     )
 
-    company_fig = px.bar(
-        selected_company,
-        x="Ticker",
-        y=["Avg_Debt_Cost", "Avg_Z_Score", "Avg_Market_Cap_B"],
-        barmode="group",
-        title="Selected Company Snapshot",
-        template="presentation",
-        labels={"value": "Value", "variable": "Metric"}
+    fig_portfolio.add_vline(
+        x=1.81,
+        line_dash="dash",
+        line_color="red",
+        annotation_text="Distress Threshold",
+        annotation_position="top left",
     )
 
-    return bar_fig, company_fig, scatter_fig
+    fig_portfolio.add_vline(
+        x=2.99,
+        line_dash="dash",
+        line_color="green",
+        annotation_text="Safe Threshold",
+        annotation_position="top right",
+    )
+
+    chart_element = mo.ui.plotly(fig_portfolio)
+
+    # Personal map / interests chart
+    travel_data = pd.DataFrame(
+        {
+            "Place": ["Kuwait", "Tanzania", "Nepal", "London"],
+            "Lat": [29.3759, -6.3690, 28.3949, 51.5072],
+            "Lon": [47.9774, 34.8888, 84.1240, -0.1276],
+            "Category": ["Home", "Volunteer", "Volunteer", "Study"],
+        }
+    )
+
+    fig_map = px.scatter_geo(
+        travel_data,
+        lat="Lat",
+        lon="Lon",
+        hover_name="Place",
+        color="Category",
+        projection="natural earth",
+        title="My Journey: Home, Study, and Volunteer Experience",
+    )
+
+    fig_map.update_traces(marker=dict(size=12))
+
+    return chart_element, fig_map
 
 
 @app.cell
-def _(avg_cost, bar_fig, cap_slider, company_count, company_fig, company_select, mo, scatter_fig, sector_select):
-    tab_overview = mo.md(
+def _(avg_cost, company_count, mo):
+    metrics_box = mo.md(
+        f"""
+        ## Dashboard Summary
+
+        | Metric | Value |
+        |---|---:|
+        | Unique companies shown | **{company_count}** |
+        | Average cost of debt | **{avg_cost:.2f}%** |
         """
-### Overview
+    )
+    return (metrics_box,)
 
-I am Mohammed Al Tammar, a student at City St George's, University of London. 
-This portfolio shows how I used Python, pandas, marimo, and Plotly to work with financial data.
 
-**Main skills shown in this project**
-- Loading and cleaning data
-- Building simple interactive filters
-- Creating charts to explain financial risk
-- Presenting results in a clear webpage format
+@app.cell
+def _(cap_slider, chart_element, fig_map, metrics_box, mo, sector_dropdown):
+    # About tab
+    tab_about = mo.md(
+        """
+        ### Mohammed Al Tammar
+
+        **Student | Aspiring Finance and Data Professional**
+
+        I am a student with an interest in finance, business, and data analysis.
+        I enjoy learning how data can support better decisions and improve business understanding.
+        This portfolio shows some of the skills I learned in data preparation, visualization, and interactive analysis.
+
+        **Education**
+        - **College Diploma**, City, University of London (2024–2028)
+        - **High School Diploma**, Al Bayan Bilingual School, Kuwait (2009–2024)
+
+        **Skills**
+        - Python basics
+        - Data preparation
+        - Data visualization
+        - Interactive dashboards
+        - Interest in business and finance
         """
     )
 
+    # Experience tab
     tab_experience = mo.md(
         """
-## Education and Experience
+        ## Experience and Activities
 
-**Education**
-- College Diploma, City St George's, University of London (2024-2028)
-- High School Diploma, Al Bayan Bilingual School, Kuwait (2009-2024)
+        **Internships**
+        - **Digital Bank Internship**, National Bank of Kuwait (2023)
+        - **Internship**, National Investments Company (2025)
 
-**Experience**
-- Digital Bank Internship, National Bank of Kuwait (2023)
-- Internship, National Investments Company (2025)
-- Community Service Volunteer, Tanzania (2023)
-- Community Service Volunteer, Nepal (2024)
+        **Community Service**
+        - **Community Service Volunteer**, Tanzania (2023)
+        - **Community Service Volunteer**, Nepal (2024)
 
-These experiences helped me improve teamwork, responsibility, and interest in finance and business.
+        These experiences helped me build teamwork, communication, and responsibility.
+        They also increased my interest in practical business learning and real-world problem solving.
         """
     )
 
-    tab_dashboard = mo.vstack([
-        mo.md("## Finance Dashboard"),
-        mo.callout(mo.md("Use the filters to compare sectors and study the relationship between credit risk and cost of debt."), kind="info"),
-        mo.hstack([sector_select, cap_slider], gap=2),
-        mo.md(f"**Companies shown:** {company_count}  \\  **Average cost of debt:** {avg_cost:.2f}%"),
-        mo.ui.plotly(scatter_fig),
-        mo.ui.plotly(bar_fig),
-    ])
-
-    tab_company = mo.vstack([
-        mo.md("## Company Snapshot"),
-        mo.callout(mo.md("This section gives a simple summary for one selected company."), kind="neutral"),
-        company_select,
-        mo.ui.plotly(company_fig),
-    ])
-
-    tab_reflection = mo.md(
-        """
-## Reflection
-
-This project helped me connect business interest with data tools. 
-I learned that charts and filters can make financial information easier to understand.
-
-I am especially interested in using data in banking, investments, and business decision making. 
-In the future, I want to improve my skills in financial analysis and practical data work.
-        """
+    # Finance dashboard tab
+    tab_dashboard = mo.vstack(
+        [
+            mo.md("## Interactive Finance Dashboard"),
+            mo.callout(
+                mo.md(
+                    "Use the filters below to explore the relationship between borrowing cost and financial risk."
+                ),
+                kind="info",
+            ),
+            mo.hstack([sector_dropdown, cap_slider], justify="center", gap=2),
+            metrics_box,
+            chart_element,
+        ]
     )
 
-    return tab_company, tab_dashboard, tab_experience, tab_overview, tab_reflection
+    # Reflection tab
+    tab_reflection = mo.vstack(
+        [
+            mo.md("## Personal Interests and Reflection"),
+            mo.md(
+                """
+                I am interested in finance, business, community service, and learning practical skills.
+
+                My volunteer experiences in Tanzania and Nepal helped me understand teamwork, responsibility, and working with different communities.
+                I also enjoy exploring how technology and data can be used in business and finance.
+
+                This project helped me understand how data can be cleaned, filtered, and presented in an interactive webpage.
+                """
+            ),
+            mo.ui.plotly(fig_map),
+        ]
+    )
+
+    return tab_about, tab_dashboard, tab_experience, tab_reflection
 
 
 @app.cell
-def _(mo, tab_company, tab_dashboard, tab_experience, tab_overview, tab_reflection):
-    app_tabs = mo.ui.tabs({
-        "Overview": tab_overview,
-        "Experience": tab_experience,
-        "Finance Dashboard": tab_dashboard,
-        "Company Snapshot": tab_company,
-        "Reflection": tab_reflection,
-    })
+def _(mo, tab_about, tab_dashboard, tab_experience, tab_reflection):
+    app_tabs = mo.ui.tabs(
+        {
+            "📄 About Me": tab_about,
+            "💼 Experience": tab_experience,
+            "📊 Finance Dashboard": tab_dashboard,
+            "🌍 Reflection": tab_reflection,
+        }
+    )
 
     mo.md(
         f"""
-# Mohammed Al Tammar
-AF1204 Individual Portfolio | City St George's, University of London
-
----
-
-{app_tabs}
+        # **Mohammed Al Tammar**
+        ---
+        {app_tabs}
         """
     )
     return
