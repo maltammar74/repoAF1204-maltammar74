@@ -250,24 +250,33 @@ def _(cap_slider, chart_element, fig_travel, mo, sector_dropdown):
 
     # --- Tab 1: CV / Profile ---
     # Using standard Markdown for formatting
-    tab_cv = mo.md(
-        """
-        ### Aspiring Financial Analyst | Data Science Enthusiast
+tab_cv = mo.md(
+    """
+    ### Student | Aspiring Finance and Data Professional
 
-        **Summary:**
-        - Passionate about uncovering market insights using modern data tools like Python, Marimo, and Plotly. 
-        - Eager to apply analytical skills to real-world financial challenges.
+    **Summary:**
+    - I am Mohammed Al Tammar, a student with an interest in finance, business, and data analysis.
+    - I enjoy learning how data can support better decisions and improve business understanding.
+    - This portfolio shows some of the skills I learned in data preparation, visualization, and interactive analysis.
 
-        **Education:**
-        *   **BSc Accounting & Finance**, Bayes Business School (2025 - Present)
-        *   *Relevant Modules:* Introduction to Data Science and AI Tools, Financial Accounting.
+    **Education:**
+    * **College Diploma**, City, University of London (2024-2028)
+    * **High School Diploma**, Al Bayan Bilingual School, Kuwait (2009-2024)
 
-        **Skills:**
-        *   🐍 Python Programming
-        *   📊 Data Visualization
-        *   📉 Financial Modeling
-        """
-        )
+    **Experience:**
+    * **Digital Bank Internship**, National Bank of Kuwait (2023)
+    * **Internship**, National Investments Company (2025)
+    * **Community Service Volunteer**, Tanzania (2023)
+    * **Community Service Volunteer**, Nepal (2024)
+
+    **Skills:**
+    * Python basics
+    * Data preparation
+    * Data visualization
+    * Interactive dashboards
+    * Business and finance interest
+    """
+)
 
 
     # --- Tab 2: The Interactive Analysis (Inputs + Plot) ---
@@ -285,9 +294,16 @@ def _(cap_slider, chart_element, fig_travel, mo, sector_dropdown):
     # --- Tab 3: Hobbies & Interests ---
     # Combining text and the travel map
     tab_personal = mo.vstack([
-        mo.md("## 🌍 My Hobbies: Travel & Photography"),
-        mo.md("When I'm not analyzing company financials, I love exploring the world."),
-        mo.ui.plotly(fig_travel)
+        mo.md("## Personal Interests and Activities"),
+    mo.md(
+        """
+        I am interested in finance, business, community service, and learning new practical skills. 
+
+        My volunteer experiences in Tanzania and Nepal helped me understand teamwork, responsibility, and working with different communities. 
+        I also enjoy exploring how technology and data can be used in business and finance.
+        """
+    ),
+    mo.ui.plotly(fig_travel)
         ])
     return tab_cv, tab_data_content, tab_personal
 
@@ -306,7 +322,7 @@ def _(mo, tab_cv, tab_data_content, tab_personal):
     # Display the final app
     mo.md(
         f"""
-        # **Jane Doe** 
+        # **Mohammed Al Tammar**
         ---
         {app_tabs}
         """)
